@@ -3,7 +3,7 @@ import re
 import string
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import openpyxl.cell.rich_text
@@ -11,14 +11,18 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.cell.rich_text import CellRichText
 from openpyxl.utils.cell import coordinate_to_tuple
+from openpyxl.worksheet.worksheet import Worksheet
 
-TYPE_WORKSHEET = Any
+TYPE_WORKSHEET = Worksheet
 
 
 class ExcelEditor:
 
     def __init__(self, path_excel: Path):
         self.wb = load_workbook(path_excel, rich_text=True)
+
+    def get_pages_name(self) -> List[str]:
+        return [ws.title for ws in self.wb.worksheets]
 
     def get_page(self, page_name: str) -> TYPE_WORKSHEET:
         lst = [ws for ws in self.wb.worksheets if ws.title == page_name]
@@ -46,33 +50,39 @@ class ExcelEditor:
     @staticmethod
     def get_page_dimensions(worksheet: TYPE_WORKSHEET) -> Tuple[int, int]:
         dims = worksheet.calculate_dimension()
-        searches = re.search(pattern=r"[A-Z]+[1-9]+:([A-Z]+[1-9]+)", string=dims)
+        searches = re.search(pattern=r"[A-Z]+[0-9]+:([A-Z]+[0-9]+)", string=dims)
         nrows, ncols = coordinate_to_tuple(searches.group(1))
         return nrows, ncols
+
+    @staticmethod
+    def from_cell_to_obj(cell_value: Any) -> Optional[Any]:
+        if cell_value is None:
+            obj = None
+        elif (
+            isinstance(cell_value, str)
+            or isinstance(cell_value, datetime)
+            or isinstance(cell_value, bool)
+            or isinstance(cell_value, float)
+            or isinstance(cell_value, int)
+        ):
+            obj = cell_value
+        elif isinstance(cell_value, CellRichText):
+            obj = "".join(e if isinstance(e, str) else e.text for e in cell_value)
+        else:
+            raise RuntimeError(f"{type(cell_value)} not handled.")
+
+        return obj
 
     def read_page(self, page_name: str) -> np.ndarray:
         page = self.get_page(page_name)
         nrows, ncols = ExcelEditor.get_page_dimensions(page)
         data = []
-        for y in range(1, nrows):
-            data.append([])
-            for x in range(1, ncols):
-                cell = page.cell(x, y).value
-                if cell is None:
-                    obj = None
-                elif (
-                    isinstance(cell, str)
-                    or isinstance(cell, datetime)
-                    or isinstance(cell, bool)
-                    or isinstance(cell, float)
-                    or isinstance(cell, int)
-                ):
-                    obj = cell
-                elif isinstance(cell, CellRichText):
-                    obj = "".join(e if isinstance(e, str) else e.text for e in cell)
-                else:
-                    raise RuntimeError(f"{type(cell)} not handled.")
-                data[-1].append(obj)
+        for row in range(1, nrows + 1):
+            lst = []
+            for col in range(1, ncols + 1):
+                cell_value = page.cell(row, col).value
+                lst.append(ExcelEditor.from_cell_to_obj(cell_value))
+            data.append(lst)
 
         return np.array(data)
 
@@ -85,3 +95,4 @@ if __name__ == "__main__":
 
     ee = ExcelEditor(PATH_DOCS_PLANNING_MAY)
     res = ee.read_page("Anglos")
+    print(res[6:, 0])
