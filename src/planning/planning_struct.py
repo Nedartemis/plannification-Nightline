@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 import pandas as pd
 
@@ -27,7 +28,5 @@ class Planning:
         pd.DataFrame
     )  # person name, is new, comments, number_shift_wanted, agree_to_be_referent, date_last_shift, date_last_gap, language
 
-    # availabilities
-    availabilities: (
-        pd.DataFrame
-    )  # personnes, type_events (perm, scrennings, gap_franco, gap_anglo), date, available (bool)
+    availabilities: pd.DataFrame
+    assignations: Optional[pd.DataFrame] = None

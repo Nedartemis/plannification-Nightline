@@ -33,7 +33,9 @@ def define_variables_matrix(label: str, nrows: int, ncols: int) -> np.ndarray:
 
 
 def solve_planning(
-    planning_availabilities: Planning, parameters: PlanningParameters
+    planning_availabilities: Planning,
+    parameters: PlanningParameters,
+    verbose: bool = True,
 ) -> Planning:
 
     # Constants
@@ -93,8 +95,8 @@ def solve_planning(
                         variables[person_idx, date_idx] == 0,
                         f"not_open_event_{event_type}_{person_idx}_{date_idx}",
                     )
-                    if person_idx == 0 and event_type == EventType.GAP_FRANCO:
-                        print(open_gaps[date_idx] == 0)
+                    # if person_idx == 0 and event_type == EventType.GAP_FRANCO:
+                    #     print(open_gaps[date_idx] == 0)
 
                 # special case for open shift
                 if event_type == EventType.SHIFT:
@@ -120,8 +122,8 @@ def solve_planning(
                 variables[person_idx, date_idx] == 0,
                 f"not available_{event_type}_{person_idx}_{date_idx}",
             )
-            if person_idx == 0 and row["event_type"] == EventType.GAP_FRANCO:
-                print(variables[person_idx, date_idx] == 0)
+            # if person_idx == 0 and row["event_type"] == EventType.GAP_FRANCO:
+            #     print(variables[person_idx, date_idx] == 0)
 
     # -- Shift rules
 
@@ -226,16 +228,14 @@ def solve_planning(
     number_person_shift = pulp.lpSum(shifts[:, :])
     number_open_shift = pulp.lpSum(open_shifts[:])
     if parameters.goal_modality == GoalModality.OPEN_SHIFT_PRIORITY:
-        solver += (
-            number_open_shift * 1000 + number_person_shift + pulp.lpSum(gaps[:, :])
-        )  # TODO
+        solver += number_open_shift * 1000 + number_person_shift
     elif parameters.goal_modality == GoalModality.NUMBER_PERSON_SHIFT_PRIORITY:
         solver += number_person_shift * 1000 + number_open_shift
     else:
         raise ValueError(f"Goal modality '{parameters.goal_modality}' not handled.")
 
     # solve
-    solver.solve()
+    solver.solve(pulp.PULP_CBC_CMD(msg=0))
     print("------------")
     if solver.status == SolverStatus.INFEASIBLE.value:
         raise RuntimeError("Infeasible planning")
@@ -264,7 +264,7 @@ def solve_planning(
     for event_type, variables in event_type_to_variables.items():
         if variables is None:
             continue
-        print(event_type)
+        # print(event_type)
         for person_idx, lst in enumerate(variables):
             for date_idx, assigned in enumerate(lst):
                 person_name = persons_name[person_idx]
@@ -275,34 +275,35 @@ def solve_planning(
     assignations = pd.DataFrame(data)
 
     name = persons_infos.iloc[0]["name"]
-    print(name)
-    print(
-        availabilities[
-            (availabilities["person_name"] == name)
-            & (availabilities["event_type"] == EventType.GAP_FRANCO)
-        ]
-    )
-    print(
-        assignations[
-            (assignations["person_name"] == name)
-            & (assignations["event_type"] == EventType.GAP_FRANCO)
-        ]
-    )
-    print(
-        assignations[
-            (assignations["event_type"] == EventType.GAP_FRANCO)
-            & (assignations["assigned"] == True)
-        ]
-    )
-    for name, c in solver.constraints.items():
-        if "gap_0" in str(c):
-            print(name, c)
+    # print(name)
+    # print(
+    #     availabilities[
+    #         (availabilities["person_name"] == name)
+    #         & (availabilities["event_type"] == EventType.GAP_FRANCO)
+    #     ]
+    # )
+    # print(
+    #     assignations[
+    #         (assignations["person_name"] == name)
+    #         & (assignations["event_type"] == EventType.GAP_FRANCO)
+    #     ]
+    # )
+    # print(
+    #     assignations[
+    #         (assignations["event_type"] == EventType.GAP_FRANCO)
+    #         & (assignations["assigned"] == True)
+    #     ]
+    # )
+    # for name, c in solver.constraints.items():
+    #     if "gap_0" in str(c):
+    #         print(name, c)
 
     # return
     return Planning(
         events=planning_availabilities.events,
         persons_infos=planning_availabilities.persons_infos,
-        availabilities=None,
+        availabilities=availabilities,
+        assignations=assignations,
     )
 
 
