@@ -121,7 +121,7 @@ def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
         }
         for line in page[ROW_FIRST_PERSON:row_after_last_person, :]
     ]
-    df_persons_info = pd.DataFrame(data=data)
+    df_persons_infos = pd.DataFrame(data=data)
 
     # availabilities
     data = [
@@ -132,7 +132,7 @@ def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
             "available": available_mapper[available],
         }
         for person_name, line in zip(
-            df_persons_info["name"],
+            df_persons_infos["name"],
             page[
                 ROW_FIRST_PERSON:row_after_last_person, COL_SHIFT:col_after_last_shift
             ],
@@ -144,7 +144,7 @@ def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
     # store and return
     return Planning(
         events=df_events.reset_index(),
-        persons_infos=df_persons_info,
+        persons_infos=df_persons_infos,
         availabilities=df_availabitilies,
     )
 
