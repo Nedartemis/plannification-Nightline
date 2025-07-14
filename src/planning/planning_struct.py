@@ -4,7 +4,7 @@ from enum import Enum
 import pandas as pd
 
 
-class TypeEvent(Enum):
+class EventType(Enum):
     SHIFT = "shift"
     SCRENNINGS = "scrennings"
     GAP_FRANCO = "gap_franco"

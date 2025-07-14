@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from helper.excel_editor import ExcelEditor
-from planning.planning_struct import Language, Planning, TypeEvent
+from planning.planning_struct import EventType, Language, Planning
 
 ROW_DATES = 2
 ROW_EVENT_NAME = 4
@@ -25,24 +25,24 @@ COL_PERSON_DATE_LAST_SHIFT = 5
 
 
 # mappers
-TYPE_EVENTS_NAME_MAPPER = Dict[str, TypeEvent]
+TYPE_EVENTS_NAME_MAPPER = Dict[str, EventType]
 events_name_mapper: TYPE_EVENTS_NAME_MAPPER = {
     # shift
-    "Shift": TypeEvent.SHIFT,
-    "Perm": TypeEvent.SHIFT,
+    "Shift": EventType.SHIFT,
+    "Perm": EventType.SHIFT,
     # screennings
-    "Screenings": TypeEvent.SCRENNINGS,
+    "Screenings": EventType.SCRENNINGS,
     # GAP bilingual
-    "Shared meeting\n(bilingual)": TypeEvent.GAP_BILINGUAL,
-    "GAP\n(bilingue)": TypeEvent.GAP_BILINGUAL,
-    "GAP\n(Bilingue)": TypeEvent.GAP_BILINGUAL,
-    "GAP \n(Bilingue)": TypeEvent.GAP_BILINGUAL,
+    "Shared meeting\n(bilingual)": EventType.GAP_BILINGUAL,
+    "GAP\n(bilingue)": EventType.GAP_BILINGUAL,
+    "GAP\n(Bilingue)": EventType.GAP_BILINGUAL,
+    "GAP \n(Bilingue)": EventType.GAP_BILINGUAL,
     # GAP
-    "Shared meeting": TypeEvent.GAP_FRANCO,
-    "GAP": TypeEvent.GAP_FRANCO,
+    "Shared meeting": EventType.GAP_FRANCO,
+    "GAP": EventType.GAP_FRANCO,
     # no shift
-    "No shift": TypeEvent.NO_SHIFT,
-    "Pas Perm": TypeEvent.NO_SHIFT,
+    "No shift": EventType.NO_SHIFT,
+    "Pas Perm": EventType.NO_SHIFT,
 }
 logos_person_is_new = {"👤": False, "🆕": True}
 number_shift_wanted_mapper = {
@@ -65,6 +65,7 @@ agree_to_be_referent_mapper = {
     "false": False,
 }
 available_mapper = {None: False, False: False, True: True, "false": False, "true": True}
+available_mapper = {label: not b for label, b in available_mapper.items()}
 
 
 def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
@@ -89,7 +90,7 @@ def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
     dates_unique = np.unique(dates)
     dates_unique.sort()
     data = {"date": dates_unique}
-    for event in list(TypeEvent):
+    for event in list(EventType):
         data[event.value] = [False] * len(dates_unique)
     df_events = pd.DataFrame(data=data).set_index("date")
 
@@ -115,8 +116,8 @@ def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
                 line[COL_PERSON_AGREE_TO_BE_REFERENT]
             ],
             "date_last_shift": line[COL_PERSON_DATE_LAST_SHIFT],
-            "comments": line[COL_PERSON_COMMENTS],
             "language": language,
+            "comments": line[COL_PERSON_COMMENTS],
         }
         for line in page[ROW_FIRST_PERSON:row_after_last_person, :]
     ]
@@ -142,7 +143,7 @@ def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
 
     # store and return
     return Planning(
-        events=df_events,
+        events=df_events.reset_index(),
         persons_infos=df_persons_info,
         availabilities=df_availabitilies,
     )
