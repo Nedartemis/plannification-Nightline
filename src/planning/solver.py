@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List
+from typing import Any, Dict, List, Union
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,9 @@ class SolverStatus(Enum):
 
 
 def define_variables_array(label: str, n: int) -> np.ndarray:
-    return np.array([pulp.LpVariable(f"{label}_{idx}") for idx in range(n)])
+    return np.array(
+        [pulp.LpVariable(f"{label}_{idx}", cat=pulp.LpBinary) for idx in range(n)]
+    )
 
 
 def define_variables_matrix(label: str, nrows: int, ncols: int) -> np.ndarray:
@@ -106,7 +108,7 @@ def solve_planning(
 
     # -- Availabilities
 
-    # not available --> shift|gaps|references = 0
+    # not available --> shift|gaps|screenings = 0
     for _, row in availabilities.iterrows():
         if not row["available"]:
             person_idx = person_name_to_person_idx[row["person_name"]]
@@ -183,7 +185,7 @@ def solve_planning(
 
         # at least the good number of referent in an open shift
         for date_idx in range(number_dates):
-            nb_referent_on_a_day = pulp.lpSum(shifts[:, date_idx])
+            nb_referent_on_a_day = pulp.lpSum(references[:, date_idx])
 
             # disjuntive case thanks to BIG_NUMBER
             solver += nb_referent_on_a_day <= 0 + BIG_NUMBER * open_shifts[date_idx]
@@ -192,6 +194,13 @@ def solve_planning(
                 >= parameters.exact_number_referent_per_perm
                 - BIG_NUMBER * (1 - open_shifts[date_idx])
             )
+
+        # you are referent --> you have a shift
+        for person_idx in range(number_persons):
+            for date_idx in range(number_dates):
+                solver += (
+                    shifts[person_idx, date_idx] >= references[person_idx, date_idx]
+                )
 
     # -- GAP
 
@@ -251,28 +260,48 @@ def solve_planning(
     data = []
 
     def add_data(
-        person_name: str, date: datetime, event_type: EventType, assigned: bool
+        person_idx: int,
+        date_idx: int,
+        event_type: EventType,
+        assignation: Union[bool, str],
     ) -> None:
         obj = {
-            "person_name": person_name,
-            "date": date,
+            "person_name": persons_name[person_idx],
+            "date": dates[date_idx],
             "event_type": event_type,
-            "assigned": assigned,
+            "assignation": assignation,
         }
         data.append(obj)
 
+    # events
     for event_type, variables in event_type_to_variables.items():
         if variables is None:
             continue
         # print(event_type)
         for person_idx, lst in enumerate(variables):
             for date_idx, assigned in enumerate(lst):
-                person_name = persons_name[person_idx]
-                date = dates[date_idx]
-
-                add_data(person_name, date, event_type, bool(assigned.value()))
+                add_data(person_idx, date_idx, event_type, bool(assigned.value()))
 
     assignations = pd.DataFrame(data)
+    assignations["assignation"] = assignations["assignation"].astype(object)
+
+    # reference
+    for person_idx, lst in enumerate(references):
+        for date_idx, is_referent in enumerate(lst):
+            person_name = persons_name[person_idx]
+            date = dates[date_idx]
+
+            if bool(is_referent.value()):
+                # erase the True by "ref"
+                assignations.loc[
+                    (assignations["person_name"] == person_name)
+                    & (assignations["date"] == date)
+                    & (assignations["event_type"] == EventType.SHIFT),
+                    "assignation",
+                ] = "ref"
+
+    # os = [e.value() for e in open_shifts]
+    # print(len(os), os)
 
     name = persons_infos.iloc[0]["name"]
     # print(name)
