@@ -49,7 +49,7 @@ def solve_planning(
     dates = np.sort(events["date"])
     number_dates = len(dates)
     # dates_last_shift = persons_infos["date_last_shift"]
-    did_gap_last_month = [True] * number_persons
+    did_gap_last_month = persons_infos["did_gap_last_month"]
     # is_new = persons_infos["is_new"]
 
     date_to_date_idx: Dict[datetime, int] = dict(zip(dates, range(number_dates)))
@@ -216,7 +216,7 @@ def solve_planning(
             # max
             solver += s <= parameters.max_number_person_gap
 
-            # min on open shifts
+            # min on open gaps
             solver += s <= 0 + BIG_NUMBER * open_gaps[date_idx]
             solver += s >= parameters.min_number_person_gap - BIG_NUMBER * (
                 1 - open_gaps[date_idx]
@@ -226,7 +226,7 @@ def solve_planning(
         if parameters.gap_modality == GapModality.MONTH:
             # no gap before the shifts (last month or before in the same month) --> no shifts
             for person_idx in range(number_persons):
-                if not did_gap_last_month[person_idx]:
+                if not did_gap_last_month.iloc[person_idx]:
                     for day_idx in range(number_dates):
                         total_gap_done = pulp.lpSum(gaps[person_idx, :day_idx])
                         solver += shifts[person_idx, day_idx] <= total_gap_done

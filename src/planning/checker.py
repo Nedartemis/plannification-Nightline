@@ -6,7 +6,7 @@ from typing import Any, Callable, List, Optional, Tuple, Union
 
 import pandas as pd
 
-from planning.parameters import PlanningParameters
+from planning.parameters import GapModality, PlanningParameters
 from planning.planning_struct import EventType, Planning
 
 TYPE_PLANNING_ASSIGNATION_CHECKS = List[Tuple[List[str], str]]
@@ -50,9 +50,11 @@ class PlanningAssignationChecksBuilder:
         self.obj.append((self.titles, detail))
 
     def add_cond(self, label: str, a: Any, bin_cond: BinConds, b: Any):
+        str_a = fd(a) if isinstance(a, datetime) else a
+        str_b = fd(b) if isinstance(b, datetime) else b
         if bin_cond.value.op(a, b):
             self.add(
-                f"{label} : '{a}' {bin_cond.value.label} '{b}'",
+                f"{label} : '{str_a}' {bin_cond.value.label} '{str_b}'",
             )
 
     def add_date_cond(
@@ -71,11 +73,14 @@ class PlanningAssignationChecksBuilder:
 
 def filter_pl(
     planning: pd.DataFrame,
+    assignation: bool,
     person_name: Optional[str] = None,
     date: Optional[datetime] = None,
     event_type: Optional[EventType] = None,
     is_referent: bool = False,
 ) -> pd.DataFrame:
+    label = "assignation" if assignation else "available"
+
     conds = []
     if person_name is not None:
         conds.append(planning["person_name"] == person_name)
@@ -84,21 +89,38 @@ def filter_pl(
     if event_type is not None:
         conds.append(planning["event_type"] == event_type)
     if is_referent:
-        conds.append(planning["assignation"] == "ref")
+        conds.append(planning[label] == "ref")
 
-    conds.append(planning["assignation"].astype(bool) == True)
+    conds.append(planning[label].astype(bool) == True)
 
     return planning[reduce(lambda a, b: a & b, conds)]
 
 
-def count_pl(
+def filter_as(
+    planning: pd.DataFrame,
+    person_name: Optional[str] = None,
+    date: Optional[datetime] = None,
+    event_type: Optional[EventType] = None,
+    is_referent: bool = False,
+):
+    return filter_pl(
+        planning=planning,
+        assignation=True,
+        person_name=person_name,
+        date=date,
+        event_type=event_type,
+        is_referent=is_referent,
+    )
+
+
+def count_as(
     planning: pd.DataFrame,
     person_name: Optional[str] = None,
     date: Optional[datetime] = None,
     event_type: Optional[EventType] = None,
     is_referent: bool = False,
 ) -> pd.DataFrame:
-    return len(filter_pl(planning, person_name, date, event_type, is_referent))
+    return len(filter_pl(planning, True, person_name, date, event_type, is_referent))
 
 
 def check_planning_assignation(
@@ -109,9 +131,11 @@ def check_planning_assignation(
     events = pa.events
     dates = events["date"].sort_values()
     person_infos = pa.persons_infos
+    person_infos_index_by_name = person_infos.set_index("name")
     persons_name = person_infos["name"]
     availabitilites = pa.availabilities
     assignation = pa.assignations
+    assert assignation is not None
     date_open_shifts = (
         assignation[
             (assignation["assignation"].astype(bool) == True)
@@ -124,12 +148,38 @@ def check_planning_assignation(
 
     checks = PlanningAssignationChecksBuilder()
 
+    # -- Availabilities
+    if availabitilites is not None:
+        checks.set_title("availibilities")
+
+        for _, row in assignation[
+            assignation["assignation"].astype(bool) == True
+        ].iterrows():
+            person_name, date, event_type = (
+                row["person_name"],
+                row["date"],
+                row["event_type"],
+            )
+            n = len(
+                filter_pl(
+                    availabitilites,
+                    assignation=False,
+                    person_name=person_name,
+                    date=date,
+                    event_type=event_type,
+                )
+            )
+            if n == 0:
+                checks.add(
+                    f"'{person_name}' on '{date}' for the '{event_type.value}' is not available but has been assigned to it."
+                )
+
     # -- shift rules
     checks.set_title("shift_rules")
 
     checks.set_sub_title("max_shift_per_person_per_month")
     for person_name in persons_name:
-        n = count_pl(assignation, person_name=person_name, event_type=EventType.SHIFT)
+        n = count_as(assignation, person_name=person_name, event_type=EventType.SHIFT)
         checks.add_person_cond(
             person_name=person_name,
             label="has too many shift on the month",
@@ -140,16 +190,16 @@ def check_planning_assignation(
 
     checks.set_sub_title("min_per_shift_open")
     for date in dates:
-        n = count_pl(assignation, date=date, event_type=EventType.SHIFT)
+        n = count_as(assignation, date=date, event_type=EventType.SHIFT)
         if n == 0 or n >= params.min_number_person_per_shift:
             continue
         checks.add(
-            f"On '{date}' the number of person is anormal : 0 < '{n}' < '{params.min_number_person_per_shift}'",
+            f"On '{date}' the number of person is anormal on the shift : 0 < '{n}' < '{params.min_number_person_per_shift}'",
         )
 
     checks.set_sub_title("max_person_per_shift")
     for person_name in persons_name:
-        pl = filter_pl(assignation, person_name=person_name, event_type=EventType.SHIFT)
+        pl = filter_as(assignation, person_name=person_name, event_type=EventType.SHIFT)
         pl = pl.sort_values("date")
         for idx in range(len(pl) - 1):
             d1: datetime = pl.iloc[idx]["date"]
@@ -165,7 +215,7 @@ def check_planning_assignation(
 
     checks.set_sub_title("max_number_reference_per_person_per_month")
     for person_name in persons_name:
-        n = count_pl(assignation, person_name=person_name, is_referent=True)
+        n = count_as(assignation, person_name=person_name, is_referent=True)
         checks.add_person_cond(
             person_name=person_name,
             label="has too many references",
@@ -176,13 +226,13 @@ def check_planning_assignation(
 
     checks.set_sub_title("no_reference_for_babies")
     for person_name in person_infos[person_infos["is_new"] == True]["name"]:
-        n = count_pl(assignation, person_name=person_name, is_referent=True)
+        n = count_as(assignation, person_name=person_name, is_referent=True)
         if n > 0:
             checks.add(f"'{person_name}' is a baby but has a reference.")
 
     checks.set_sub_title("exact_number_referent_per_open_shift")
     for date in date_open_shifts:
-        n = count_pl(assignation, date=date, is_referent=True)
+        n = count_as(assignation, date=date, is_referent=True)
         checks.add_date_cond(
             date,
             label="there is not the good number of referent in an open shift",
@@ -199,14 +249,49 @@ def check_planning_assignation(
 
     checks.set_sub_title("max_number_person_in_gap")
     for date in gaps_date:
-        n = count_pl(assignation, date=date, event_type=EventType.GAP_FRANCO)
+        n = count_as(assignation, date=date, event_type=EventType.GAP_FRANCO)
         checks.add_date_cond(
             date=date,
-            label="there are too many persons",
+            label="there are too many persons on the gap",
             a=n,
             bin_cond=BinConds.SUPERIOR,
             b=params.max_number_person_gap,
         )
+
+    checks.set_sub_title("min_number_person_in_gap")
+    for date in gaps_date:
+        n = count_as(assignation, date=date, event_type=EventType.GAP_FRANCO)
+        checks.add_date_cond(
+            date=date,
+            label="there are too few persons on the gap",
+            a=n,
+            bin_cond=BinConds.SUPERIOR,
+            b=params.min_number_person_gap,
+        )
+
+    checks.set_sub_title("no_shift_if_no_gap_before")
+    if params.gap_modality == GapModality.MONTH:
+        for person_name in persons_name:
+            if person_infos_index_by_name.loc[person_name, "did_gap_last_month"]:
+                continue
+
+            date_first_gap = filter_as(
+                assignation, person_name=person_name, event_type=EventType.GAP_FRANCO
+            )["date"].min()
+
+            shifts = filter_as(
+                assignation, person_name=person_name, event_type=EventType.SHIFT
+            )
+            for shift in shifts:
+                checks.add_person_cond(
+                    person_name=person_name,
+                    label="did not do a GAP last month and has a shift before its gap",
+                    a=shift["date"],
+                    bin_cond=BinConds.INFERIOR,
+                    b=date_first_gap,
+                )
+    elif params.gap_modality == GapModality.SHIFTS:
+        raise ValueError("Cheks on GapModality.SHIFTS has not been made.")
 
     return checks.get()
 

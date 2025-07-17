@@ -28,5 +28,5 @@ class Planning:
         pd.DataFrame
     )  # person name, is new, comments, number_shift_wanted, agree_to_be_referent, date_last_shift, date_last_gap, language
 
-    availabilities: pd.DataFrame
+    availabilities: Optional[pd.DataFrame] = None
     assignations: Optional[pd.DataFrame] = None

@@ -117,6 +117,7 @@ def read_page(ee: ExcelEditor, page_name: str, language: Language) -> Planning:
             ],
             "date_last_shift": line[COL_PERSON_DATE_LAST_SHIFT],
             "language": language,
+            "did_gap_last_month": True,
             "comments": line[COL_PERSON_COMMENTS],
         }
         for line in page[ROW_FIRST_PERSON:row_after_last_person, :]
